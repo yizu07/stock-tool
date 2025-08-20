@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>股價 EPS 合理價計算器</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 10px; }
+    input, button { font-size: 1rem; padding: 6px; margin: 4px 0; }
+    #output { margin-top: 20px; font-size: 1.2rem; }
+    .good { color: green; font-weight: bold; }
+    .bad { color: red; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>股價 EPS 合理價計算器</h1>
+  <label>股票代號：
+    <input id="symbol" type="text" placeholder="例如 2330" value="2330" />
+  </label><br />
+  <label>目標本益比（PE）：
+    <input id="targetPE" type="number" value="15" min="1" max="50" />
+  </label><br />
+  <button onclick="update()">計算</button>
+
+  <div id="output"></div>
+
+  <script>
+    async function update() {
+      const symbol = document.getElementById('symbol').value.trim();
+      const targetPE = parseFloat(document.getElementById('targetPE').value);
+      if (!symbol) {
+        alert('請輸入股票代號');
+        return;
+      }
+      if (isNaN(targetPE) || targetPE <= 0) {
+        alert('請輸入正確的目標本益比');
+        return;
+      }
+
+      const output = document.getElementById('output');
+      output.innerHTML = '載入中，請稍候...';
+
+      try {
+        // 取得近期股價
+        const priceResp = await fetch(
+          `https://api.finmindtrade.com/api/v3/data?dataset=TaiwanStockPriceMinute&stock_id=${symbol}`
+        );
+        const priceJson = await priceResp.json();
+        if (!priceJson.data || priceJson.data.length === 0) {
+          output.innerHTML = '無法取得股價資料，請確認股票代號是否正確';
+          return;
+        }
+        const price = priceJson.data[0].deal_price;
+
+        // 取得當日本益比
+        const today = new Date().toISOString().slice(0, 10);
+        const perResp = await fetch(
+          `https://api.finmindtrade.com/api/v3/data?dataset=TaiwanStockPER&stock_id=${symbol}&date=${today}`
+        );
+        const perJson = await perResp.json();
+        if (!perJson.data || perJson.data.length === 0) {
+          output.innerHTML = '無法取得本益比資料';
+          return;
+        }
+        const per = perJson.data[0].PER;
+
+        // 反推 EPS
+        const eps = price / per;
+
+        // 計算合理買進價
+        const fairPrice = eps * targetPE;
+
+        output.innerHTML = `
+          當日股價：${price.toFixed(2)} 元<br />
+          當日本益比（PER）：${per.toFixed(2)}<br />
+          推算 EPS：${eps.toFixed(2)} 元<br />
+          合理買進價（EPS × ${targetPE}）：${fairPrice.toFixed(2)} 元<br />
+          <span class="${price <= fairPrice ? 'good' : 'bad'}">
+            ${price <= fairPrice ? '✅ 目前股價低於或等於合理價' : '⚠️ 目前股價高於合理價'}
+          </span>
+        `;
+      } catch (error) {
+        output.innerHTML = '發生錯誤，請稍後再試';
+        console.error(error);
+      }
+    }
+  </script>
+</body>
+</html>
